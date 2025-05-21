@@ -104,6 +104,19 @@
 	</label>
 	<input type="text" class="form-control" name="volumes" placeholder="Enter volumes or leave blank">
 </div>
+
+<div class="form-group">
+	<label>
+		Server<br>
+		<small class="form-text text-muted">
+			Choose which Docker server to deploy this container on
+		</small>
+	</label>
+	<select class="form-control" name="server" id="container-server" required disabled>
+		<option value="" id="container-server-default" disabled selected>Loading...</option>
+	</select>
+</div>
+
 {% endblock %}
 
 {% block type %}

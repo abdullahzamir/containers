@@ -20,11 +20,11 @@
 			<form method="post" action="/containers/api/settings/update" accept-charset="utf-8" autocomplete="off"
 				role="form" class="form-horizontal" enctype="multipart/form-data">
 				<div class="form-group">
-					<label for="docker_base_url">
+					<label for="docker_servers">
 						Base URL (see instructions)
 					</label>
-					<input class="form-control" type="text" name="docker_base_url" id="docker_base_url"
-						placeholder="E.g. unix://var/run/docker.sock or ssh://root@example.com"
+					<input class="form-control" type="text" name="docker_servers" id="docker_servers"
+						placeholder='E.g.{"server1": "unix://...", "server2": "ssh://..."}'
 						value='{{ settings.docker_base_url|default("") }}' />
 				</div>
 				<div class="form-group">

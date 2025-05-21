@@ -30,14 +30,16 @@ class ContainerException(Exception):
             return "Unknown Container Exception"
 
 class ContainerManager:
+    client = {}
     def __init__(self, settings, app):
         self.settings = settings
         self.client = None
         self.app = app
-        if settings.get("docker_base_url") is None or settings.get("docker_base_url") == "":
+        if settings.get("docker_servers") is None or settings.get("servers") == "":
             return
 
         # Connect to the docker daemon
+        self.client = {}
         try:
             self.initialize_connection(settings, app)
         except ContainerException:
@@ -59,7 +61,7 @@ class ContainerManager:
     def initialize_connection(self, settings, app) -> None:
         self.settings = settings
         self.app = app
-
+        self.client = {}
         # Remove any leftover expiration schedulers
         try:
             self.expiration_scheduler.shutdown()
@@ -67,69 +69,76 @@ class ContainerManager:
             # Scheduler was never running
             pass
 
-        if settings.get("docker_base_url") is None:
+        server = json.loads(settings.get("docker_servers","{}"))
+
+        if settings.get("docker_servers") is None:
             self.client = None
             return
 
-        try:
-            self.client = docker.DockerClient(
-                base_url=settings.get("docker_base_url"))
-        except (docker.errors.DockerException) as e:
-            self.client = None
-            print(f"Error: {e}")
-            raise ContainerException("CTFd could not connect to Docker")
-        except TimeoutError as e:
-            self.client = None
-            raise ContainerException(
-                "CTFd timed out when connecting to Docker")
-        except paramiko.ssh_exception.NoValidConnectionsError as e:
-            self.client = None
-            raise ContainerException(
-                "CTFd timed out when connecting to Docker: " + str(e))
-        except paramiko.ssh_exception.AuthenticationException as e:
-            self.client = None
-            raise ContainerException(
-                "CTFd had an authentication error when connecting to Docker: " + str(e))
+        for name,server_url in server.items():
+            print(f"Connecting to Docker server: ", server_url)
+            try:
+                client = docker.DockerClient(base_url=server_url)
+                client.ping()
+                print(f"Connected to Docker server: ", server_url)
+                self.client[name] = client 
+            except docker.errors.DockerException as e:
+                self.client = None
+                raise ContainerException("CTFd could not connect to Docker")
+            except TimeoutError as e:
+                self.client = None
+                raise ContainerException("CTFd timed out when connecting to Docker")
+            except paramiko.ssh_exception.NoValidConnectionsError as e:
+                self.client = None
+                raise ContainerException(
+                    "CTFd timed out when connecting to Docker: " + str(e)
+                )
+            except paramiko.ssh_exception.AuthenticationException as e:
+                self.client = None
+                raise ContainerException(
+                    "CTFd had an authentication error when connecting to Docker: " + str(e)
+                )
 
-        # Set up expiration scheduler
-        try:
-            self.expiration_seconds = int(
-                settings.get("container_expiration", 0)) * 60
-        except (ValueError, AttributeError):
-            self.expiration_seconds = 0
+            # Set up expiration scheduler
+            try:
+                self.expiration_seconds = int(
+                    settings.get("container_expiration", 0)) * 60
+            except (ValueError, AttributeError):
+                self.expiration_seconds = 0
 
-        EXPIRATION_CHECK_INTERVAL = 5
+            EXPIRATION_CHECK_INTERVAL = 5
 
-        if self.expiration_seconds > 0:
-            self.expiration_scheduler = BackgroundScheduler()
-            self.expiration_scheduler.add_job(
-                func=self.kill_expired_containers, args=(app,), trigger="interval", seconds=EXPIRATION_CHECK_INTERVAL)
-            self.expiration_scheduler.start()
+            if self.expiration_seconds > 0:
+                self.expiration_scheduler = BackgroundScheduler()
+                self.expiration_scheduler.add_job(
+                    func=self.kill_expired_containers, args=(app,), trigger="interval", seconds=EXPIRATION_CHECK_INTERVAL)
+                self.expiration_scheduler.start()
 
-            # Shut down the scheduler when exiting the app
-            atexit.register(lambda: self.expiration_scheduler.shutdown())
+                # Shut down the scheduler when exiting the app
+                atexit.register(lambda: self.expiration_scheduler.shutdown())
 
     # TODO: Fix this cause it doesn't work
     def run_command(func):
         def wrapper_run_command(self, *args, **kwargs):
-            if self.client is None:
+            for client in self.client.values():
+                if client is None:
+                    try:
+                        self.__init__(self.settings, self.app)
+                    except:
+                        raise ContainerException("Docker is not connected")
                 try:
-                    self.__init__(self.settings, self.app)
-                except:
-                    raise ContainerException("Docker is not connected")
-            try:
-                if self.client is None:
-                    raise ContainerException("Docker is not connected")
-                if self.client.ping():
-                    return func(self, *args, **kwargs)
-            except (paramiko.ssh_exception.SSHException, ConnectionError, requests.exceptions.ConnectionError) as e:
-                # Try to reconnect before failing
-                try:
-                    self.__init__(self.settings, self.app)
-                except:
-                    pass
-                raise ContainerException(
-                    "Docker connection was lost. Please try your request again later.")
+                    if client is None:
+                        raise ContainerException("Docker is not connected")
+                    if client.ping():
+                        return func(self, *args, **kwargs)
+                except (paramiko.ssh_exception.SSHException, ConnectionError, requests.exceptions.ConnectionError) as e:
+                    # Try to reconnect before failing
+                    try:
+                        self.__init__(self.settings, self.app)
+                    except:
+                        pass
+                    raise ContainerException(
+                        "Docker connection was lost. Please try your request again later.")
         return wrapper_run_command
 
     @run_command
@@ -151,13 +160,20 @@ class ContainerManager:
 
     @run_command
     def is_container_running(self, container_id: str) -> bool:
-        container = self.client.containers.list(filters={"id": container_id})
-        if len(container) == 0:
-            return False
-        return container[0].status == "running"
+        for client in self.client.values():
+            container = client.containers.list(filters={"id": container_id})
+            if len(container) == 0:
+                return False
+            return container[0].status == "running"
 
     @run_command
-    def create_container(self, chal_id: str, team_id: str, user_id: str, image: str, port: int, command: str, volumes: str):
+    def create_container(self, chal_id: str, team_id: str, user_id: str, image: str, port: int, command: str, volumes: str, server: str):
+        for name,client_name in self.client.items():
+            print(f"Client: {client_name}")
+            print(f"Server: {server}")           
+            if server==name:
+                print(f"Using server {name} for challenge {chal_id} for team {team_id} spawned by {user_id}")
+                client = client_name
         kwargs = {}
 
         # Set the memory and CPU limits for the container
@@ -193,7 +209,7 @@ class ContainerManager:
 
         print(f"Using {external_port} as the external port for challenge {chal_id} for team {team_id} spawned by {user_id}")
         try:
-            return self.client.containers.run(
+            return client.containers.run(
                 image,
                 ports={str(port): str(external_port)},
                 command=command,
@@ -206,28 +222,31 @@ class ContainerManager:
             raise ContainerException("Docker image not found")
 
     @run_command
-    def get_container_port(self, container_id: str) -> "str|None":
-        try:
-            for port in list(self.client.containers.get(container_id).ports.values()):
-                if port is not None:
-                    return port[0]["HostPort"]
-        except (KeyError, IndexError):
-            return None
+    def get_container_port(self, container_id: str,client=None) -> "str|None":
+        for client in self.client.values():
+            try:
+                for port in list(client.containers.get(container_id).ports.values()):
+                    if port is not None:
+                        return port[0]["HostPort"]
+            except (KeyError, IndexError):
+                return None
 
     @run_command
     def get_images(self) -> "list[str]|None":
-        try:
-            images = self.client.images.list()
-        except (KeyError, IndexError):
-            return []
+        for client in self.client.values():
+                print("Client:", client)
+                try:
+                    images = client.images.list()
+                except (KeyError, IndexError):
+                    return []
 
-        images_list = []
-        for image in images:
-            if len(image.tags) > 0:
-                images_list.append(image.tags[0])
+                images_list = []
+                for image in images:
+                    if len(image.tags) > 0:
+                        images_list.append(image.tags[0])
 
-        images_list.sort()
-        return images_list
+                images_list.sort()
+                return images_list
 
     @run_command
     def kill_container(self, container_id: str):
@@ -237,8 +256,22 @@ class ContainerManager:
             pass
 
     def is_connected(self) -> bool:
-        try:
-            self.client.ping()
-        except:
+        if self.client is None:
             return False
-        return True
+        try:
+            for client in self.client.values():
+                client.ping()
+            return True
+        except docker.errors.APIError:
+            return False
+
+    def get_docker_client(self,challenge=None) -> docker.DockerClient:
+        print(f"Clients: {self.client}")
+        if self.client is None:
+            raise ContainerException("Docker is not connected")
+        return random.choice(list(self.client.values()))
+
+    def get_running_servers(self) -> "list[str]":
+        if self.client is None:
+            return []
+        return list(self.client.keys())

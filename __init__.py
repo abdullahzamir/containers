@@ -71,6 +71,7 @@ class ContainerChallenge(BaseChallenge):
                 "templates": cls.templates,
                 "scripts": cls.scripts,
             },
+            "server": challenge.server,
         }
         return data
 
@@ -265,7 +266,7 @@ def load(app: Flask):
         # Run a new Docker container
         try:
             created_container = container_manager.create_container(
-                chal_id, xid, uid, challenge.image, challenge.port, challenge.command, challenge.volumes)
+                chal_id, xid, uid, challenge.image, challenge.port, challenge.command, challenge.volumes,challenge.server)
         except ContainerException as err:
             return {"error": str(err)}
 
@@ -566,99 +567,52 @@ def load(app: Flask):
     @containers_bp.route('/api/settings/update', methods=['POST'])
     @admins_only
     def route_update_settings():
-        if request.form.get("docker_base_url") is None:
-            return {"error": "Invalid request"}, 400
+        # Updated fields (docker_servers is the new JSON field)
+        required_fields = [
+            "docker_servers",
+            "docker_hostname",
+            "container_expiration",
+            "container_maxmemory",
+            "container_maxcpu",
+        ]
 
-        if request.form.get("docker_hostname") is None:
-            return {"error": "Invalid request"}, 400
+        # Validate required fields
+        for field in required_fields:
+            if request.form.get(field) is None:
+                return {"error": f"{field} is required."}, 400
 
-        if request.form.get("container_expiration") is None:
-            return {"error": "Invalid request"}, 400
+        # Validate docker_servers JSON
+        docker_servers_raw = request.form.get("docker_servers")
+        try:
+            docker_servers = json.loads(docker_servers_raw)
+            if not isinstance(docker_servers, dict):
+                raise ValueError("docker_servers must be a JSON object")
+        except Exception as e:
+            return {"error": f"Invalid docker_servers JSON: {str(e)}"}, 400
 
-        if request.form.get("container_maxmemory") is None:
-            return {"error": "Invalid request"}, 400
+        # Save docker_servers as a JSON string
+        for key in required_fields:
+            value = request.form.get(key)
+            if key == "docker_servers":
+                value = json.dumps(docker_servers)
 
-        if request.form.get("container_maxcpu") is None:
-            return {"error": "Invalid request"}, 400
-
-        docker_base_url = ContainerSettingsModel.query.filter_by(
-            key="docker_base_url").first()
-
-        docker_hostname = ContainerSettingsModel.query.filter_by(
-            key="docker_hostname").first()
-
-        container_expiration = ContainerSettingsModel.query.filter_by(
-            key="container_expiration").first()
-
-        container_maxmemory = ContainerSettingsModel.query.filter_by(
-            key="container_maxmemory").first()
-
-        container_maxcpu = ContainerSettingsModel.query.filter_by(
-            key="container_maxcpu").first()
-
-        # Create or update
-        if docker_base_url is None:
-            # Create
-            docker_base_url = ContainerSettingsModel(
-                key="docker_base_url", value=request.form.get("docker_base_url"))
-            db.session.add(docker_base_url)
-        else:
-            # Update
-            docker_base_url.value = request.form.get("docker_base_url")
-
-        # Create or update
-        if docker_hostname is None:
-            # Create
-            docker_hostname = ContainerSettingsModel(
-                key="docker_hostname", value=request.form.get("docker_hostname"))
-            db.session.add(docker_hostname)
-        else:
-            # Update
-            docker_hostname.value = request.form.get("docker_hostname")
-
-        # Create or update
-        if container_expiration is None:
-            # Create
-            container_expiration = ContainerSettingsModel(
-                key="container_expiration", value=request.form.get("container_expiration"))
-            db.session.add(container_expiration)
-        else:
-            # Update
-            container_expiration.value = request.form.get(
-                "container_expiration")
-
-        # Create or update
-        if container_maxmemory is None:
-            # Create
-            container_maxmemory = ContainerSettingsModel(
-                key="container_maxmemory", value=request.form.get("container_maxmemory"))
-            db.session.add(container_maxmemory)
-        else:
-            # Update
-            container_maxmemory.value = request.form.get("container_maxmemory")
-
-        # Create or update
-        if container_maxcpu is None:
-            # Create
-            container_maxcpu = ContainerSettingsModel(
-                key="container_maxcpu", value=request.form.get("container_maxcpu"))
-            db.session.add(container_maxcpu)
-        else:
-            # Update
-            container_maxcpu.value = request.form.get("container_maxcpu")
+            setting = ContainerSettingsModel.query.filter_by(key=key).first()
+            if not setting:
+                setting = ContainerSettingsModel(key=key, value=value)
+                db.session.add(setting)
+            else:
+                setting.value = value
 
         db.session.commit()
 
-        container_manager.settings = settings_to_dict(
-            ContainerSettingsModel.query.all())
+        # Refresh container manager settings
+        container_manager.settings = settings_to_dict(ContainerSettingsModel.query.all())
 
-        if container_manager.settings.get("docker_base_url") is not None:
-            try:
-                container_manager.initialize_connection(
-                    container_manager.settings, app)
-            except ContainerException as err:
-                flash(str(err), "error")
-                return redirect(url_for(".route_containers_settings"))
+        try:
+            container_manager.initialize_connection(container_manager.settings, Flask)
+        except ContainerException as err:
+            flash(str(err), "error")
+            return redirect(url_for(".route_containers_settings"))
 
         return redirect(url_for(".route_containers_dashboard"))
 
@@ -755,6 +709,15 @@ def load(app: Flask):
 
         # Return the JSON response
         return json.dumps(response_data)
+  
+    @containers_bp.route('/api/running_servers', methods=['GET'])
+    @admins_only
+    def route_get_running_servers():
+        try:
+            servers = container_manager.get_running_servers()
+        except ContainerException as err:
+            return {"error": str(err)}
+        return {"servers": servers}
 
 
     @containers_bp.route('/settings', methods=['GET'])
@@ -765,3 +728,4 @@ def load(app: Flask):
         return render_template('container_settings.html', settings=container_manager.settings)
 
     app.register_blueprint(containers_bp)
+

@@ -23,7 +23,7 @@ class ContainerChallengeModel(Challenges):
     initial = db.Column(db.Integer, default=0)
     minimum = db.Column(db.Integer, default=0)
     decay = db.Column(db.Integer, default=0)
-
+    server = db.Column(db.Text, default="")
     def __init__(self, *args, **kwargs):
         super(ContainerChallengeModel, self).__init__(**kwargs)
         self.value = kwargs["initial"]
@@ -50,7 +50,7 @@ class ContainerInfoModel(db.Model):
     user = relationship("Users", foreign_keys=[user_id])
     challenge = relationship(ContainerChallengeModel,
                              foreign_keys=[challenge_id])
-
+    server = db.Column(db.Text, default="")
 class ContainerSettingsModel(db.Model):
     __mapper_args__ = {"polymorphic_identity": "container_settings"}
     key = db.Column(db.String(512), primary_key=True)
