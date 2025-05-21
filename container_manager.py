@@ -233,6 +233,7 @@ class ContainerManager:
 
     @run_command
     def get_images(self) -> "list[str]|None":
+        images_list = []
         for client in self.client.values():
                 print("Client:", client)
                 try:
@@ -240,13 +241,12 @@ class ContainerManager:
                 except (KeyError, IndexError):
                     return []
 
-                images_list = []
                 for image in images:
                     if len(image.tags) > 0:
                         images_list.append(image.tags[0])
 
                 images_list.sort()
-                return images_list
+        return images_list
 
     @run_command
     def kill_container(self, container_id: str):
