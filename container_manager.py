@@ -222,38 +222,60 @@ class ContainerManager:
             raise ContainerException("Docker image not found")
 
     @run_command
-    def get_container_port(self, container_id: str,client=None) -> "str|None":
-        for client in self.client.values():
-            try:
-                for port in list(client.containers.get(container_id).ports.values()):
-                    if port is not None:
-                        return port[0]["HostPort"]
-            except (KeyError, IndexError):
-                return None
+    def get_container_port(self, container_id: str,server: str) -> "str|None":
+        for name,client_name in self.client.items():
+            print(f"Client in port: {client_name}")
+            print(f"Server in port: {name}")           
+            if server==name:
+                client = client_name  
+                print(f"client in port: {client}")             
+                try:
+                    for port in list(client.containers.get(container_id).ports.values()):
+                        if port is not None:
+                            return port[0]["HostPort"]
+                except (KeyError, IndexError):
+                    return None
 
     @run_command
     def get_images(self) -> "list[str]|None":
         images_list = []
-        for client in self.client.values():
-                print("Client:", client)
-                try:
-                    images = client.images.list()
-                except (KeyError, IndexError):
-                    return []
-
+        server = json.loads(self.settings.get("docker_servers","{}"))
+        
+        for name,server_url in server.items(): 
+            print(f"Connecting to Docker server: {server_url}")
+            client = docker.DockerClient(base_url=server_url)
+            try:
+                client.ping()
+                print(f"Connected to Docker server: {server_url}")
+                images = client.images.list()
+                print(f"Images found on {server_url}: {images}")
                 for image in images:
                     if len(image.tags) > 0:
                         images_list.append(image.tags[0])
+            except docker.errors.DockerException as e:
+                print(f"Failed to connect to Docker server: {server_url} - {e}")
+                continue    
 
-                images_list.sort()
+        # for client in self.client.values():
+        #         print("Client:", client)
+        #         try:
+        #             images = client.images.list()
+        #         except (KeyError, IndexError):
+        #             return []
+
+        #         for image in images:
+        #             if len(image.tags) > 0:
+        #                 images_list.append(image.tags[0])
+
+        #         images_list.sort()
         return images_list
 
-    @run_command
     def kill_container(self, container_id: str):
-        try:
-            self.client.containers.get(container_id).kill()
-        except docker.errors.NotFound:
-            pass
+        for client in self.client.values():
+            try:
+                client.containers.get(container_id).kill()
+            except docker.errors.NotFound:
+                pass
 
     def is_connected(self) -> bool:
         if self.client is None:

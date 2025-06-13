@@ -221,7 +221,14 @@ def load(app: Flask):
         # Make sure the challenge exists and is a container challenge
         if challenge is None:
             return {"error": "Challenge not found"}, 400
-
+        hostname = json.loads(container_manager.settings.get("docker_servers","{}"))
+        for name,server_url in hostname.items():
+            if challenge.server == name:
+                hostname = server_url
+                if "unix://" in hostname:
+                    hostname = "localhost"
+                elif "ssh://" in hostname:
+                    hostname = hostname.split("@")[1]
         # Check if user already has MAX_CONTAINERS_ALLOWED number running containers.
         MAX_CONTAINERS_ALLOWED = settings["vars"]["MAX_CONTAINERS_ALLOWED"]
         if not is_team: uid = xid
@@ -248,7 +255,7 @@ def load(app: Flask):
                         running_container.container_id):
                     return json.dumps({
                         "status": "already_running",
-                        "hostname": container_manager.settings.get("docker_hostname", ""),
+                        "hostname": hostname,
                         "port": running_container.port,
                         "ssh_username": running_container.ssh_username,
                         "ssh_password": running_container.ssh_password,
@@ -271,7 +278,7 @@ def load(app: Flask):
             return {"error": str(err)}
 
         # Fetch the random port Docker assigned
-        port = container_manager.get_container_port(created_container.id)
+        port = container_manager.get_container_port(created_container.id,challenge.server)
 
         # Port may be blank if the container failed to start
         if port is None:
@@ -307,7 +314,7 @@ def load(app: Flask):
 
         return json.dumps({
             "status": "created",
-            "hostname": container_manager.settings.get("docker_hostname", ""),
+            "hostname": hostname,
             "port": port,
             "connect": challenge.ctype,
             "expires": expires
