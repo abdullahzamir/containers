@@ -226,7 +226,8 @@ def load(app: Flask):
             if challenge.server == name:
                 hostname = server_url
                 if "unix://" in hostname:
-                    hostname = "localhost"
+                    import socket
+                    hostname = [(s.connect(('8.8.8.8', 53)), s.getsockname()[0], s.close()) for s in [socket.socket(socket.AF_INET, socket.SOCK_DGRAM)]][0][1]
                 elif "ssh://" in hostname:
                     hostname = hostname.split("@")[1]
         # Check if user already has MAX_CONTAINERS_ALLOWED number running containers.
