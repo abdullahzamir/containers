@@ -35,6 +35,7 @@ class ContainerManager:
         self.settings = settings
         self.client = None
         self.app = app
+        self.images_list = []
         if settings.get("docker_servers") is None or settings.get("servers") == "":
             return
 
@@ -143,7 +144,7 @@ class ContainerManager:
 
     @run_command
     def kill_expired_containers(self, app: Flask):
-        with app.app_context():
+        with self.app.app_context():
             containers: "list[ContainerInfoModel]" = ContainerInfoModel.query.all()
 
             for container in containers:
@@ -236,9 +237,10 @@ class ContainerManager:
                 except (KeyError, IndexError):
                     return None
 
-    @run_command
+    
     def get_images(self) -> "list[str]|None":
-        images_list = []
+        if self.images_list is not None and len(self.images_list) > 0:
+                return self.images_list
         server = json.loads(self.settings.get("docker_servers","{}"))
         
         for name,server_url in server.items(): 
@@ -251,24 +253,13 @@ class ContainerManager:
                 print(f"Images found on {server_url}: {images}")
                 for image in images:
                     if len(image.tags) > 0:
-                        images_list.append(image.tags[0])
+                        self.images_list.append(image.tags[0])
             except docker.errors.DockerException as e:
                 print(f"Failed to connect to Docker server: {server_url} - {e}")
                 continue    
 
-        # for client in self.client.values():
-        #         print("Client:", client)
-        #         try:
-        #             images = client.images.list()
-        #         except (KeyError, IndexError):
-        #             return []
+        return self.images_list
 
-        #         for image in images:
-        #             if len(image.tags) > 0:
-        #                 images_list.append(image.tags[0])
-
-        #         images_list.sort()
-        return images_list
 
     def kill_container(self, container_id: str):
         for client in self.client.values():
