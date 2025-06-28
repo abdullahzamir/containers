@@ -36,6 +36,7 @@ class ContainerManager:
         self.client = None
         self.app = app
         self.images_list = []
+        self.len_images_list = 0
         if settings.get("docker_servers") is None or settings.get("servers") == "":
             return
 
@@ -239,10 +240,10 @@ class ContainerManager:
 
     
     def get_images(self) -> "list[str]|None":
-        if self.images_list is not None and len(self.images_list) > 0:
-                return self.images_list
-        server = json.loads(self.settings.get("docker_servers","{}"))
-        
+#        if self.images_list is not None and len(self.images_list) > 0 and len(self.images_list) == self.len_images_list:
+#               return self.images_list
+        images_list = []
+        server = json.loads(self.settings.get("docker_servers","{}"))        
         for name,server_url in server.items(): 
             print(f"Connecting to Docker server: {server_url}")
             client = docker.DockerClient(base_url=server_url)
@@ -253,12 +254,12 @@ class ContainerManager:
                 print(f"Images found on {server_url}: {images}")
                 for image in images:
                     if len(image.tags) > 0:
-                        self.images_list.append(image.tags[0])
+                        images_list.append(image.tags[0])
             except docker.errors.DockerException as e:
                 print(f"Failed to connect to Docker server: {server_url} - {e}")
                 continue    
 
-        return self.images_list
+        return images_list
 
 
     def kill_container(self, container_id: str):
