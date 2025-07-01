@@ -66,3 +66,44 @@ if (match && match[1]) {
 } else {
     console.error("Challenge ID not found in the URL.");
 }
+
+var containerServer = document.getElementById("container-server");
+var containerServerDefault = document.getElementById("container-server-default");
+
+var server_path = "/containers/api/running_servers";
+
+fetch(server_path, {
+    method: "GET",
+    headers: {
+        "Accept": "application/json",
+        "CSRF-Token": init.csrfNonce
+    }
+})
+.then(response => {
+    if (!response.ok) {
+        // Handle error response
+        return Promise.reject("Error fetching data");
+    }
+    return response.json();
+})
+.then(data => {
+    if (data.error != undefined) {
+        // Error
+        containerServerDefault.innerHTML = data.error;
+    } else {
+        // Success
+        for (var i = 0; i < data.servers.length; i++) {
+            var opt = document.createElement("option");
+            opt.value = data.servers[i];
+            opt.innerHTML = data.servers[i];
+            containerServer.appendChild(opt);
+        }
+        containerServerDefault.innerHTML = "Choose a server...";
+        containerServer.removeAttribute("disabled");
+    }
+    console.log(data);
+})
+.catch(error => {
+    // Handle fetch error
+    console.error(error);
+});
