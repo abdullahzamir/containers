@@ -298,7 +298,8 @@ def load(app: Flask):
                 user_id=uid,
                 port=port,
                 timestamp=int(time.time()),
-                expires=expires
+                expires=expires,
+                server=challenge.server
             )
         else: 
             new_container = ContainerInfoModel(
@@ -307,7 +308,8 @@ def load(app: Flask):
                 user_id=xid,
                 port=port,
                 timestamp=int(time.time()),
-                expires=expires
+                expires=expires,
+                server=challenge.server
             )
         db.session.add(new_container)
         db.session.commit()

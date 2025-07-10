@@ -73,6 +73,7 @@
 			<tr>
 				<td><strong>Container ID</strong>
 				</td>
+				<td><strong>Server</strong></td>
 				<td><strong>Image</strong>
 				</td>
 				<td><strong>Challenge</strong>
@@ -98,6 +99,7 @@
 			
 			<tr>
 				<td class="container_item" id="{{ c.container_id }}">{{ c.container_id[:12] }}</td>
+				<td>{{ c.server }}</td>
 				<td>{{ c.challenge.image }}</td>
 				<td>{{ c.challenge.name }} [{{ c.challenge_id }}]</td>
 				{% if c.team == None %}
